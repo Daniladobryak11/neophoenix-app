@@ -2,6 +2,11 @@ name: Build iPhone app
 
 on:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: "Mac для сборки (macos-15-intel или macos-latest)"
+        required: false
+        default: "macos-15-intel"
   push:
     branches: [main, app-v1]
     tags: ["v*"]
@@ -11,7 +16,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ${{ github.event.inputs.runner || 'macos-15-intel' }}
     timeout-minutes: 30
 
     steps:
