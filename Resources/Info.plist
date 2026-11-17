@@ -40,6 +40,8 @@
 	<string>Вход в приложение по Face ID вместо пароля.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Чтобы сфотографировать товар или документ и прикрепить к заказу или в чат.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Чтобы записывать голосовые сообщения в чат.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Чтобы отправить коллегам вашу геопозицию в чате.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

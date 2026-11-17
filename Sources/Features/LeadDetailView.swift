@@ -11,6 +11,8 @@ struct LeadDetailView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var showOrder = false
+    @State private var manager: String?
+    @State private var pickManager = false
 
     private var lead: Lead? { state.leads.first { $0.id == leadId } }
 
@@ -49,6 +51,14 @@ struct LeadDetailView: View {
                                 .listRowBackground(Color.clear).listRowInsets(EdgeInsets())
                         }
                     }
+                    Section {
+                        let mid = manager ?? l.manager
+                        ResponsibleRow(userId: mid, name: state.profile(mid)?.name ?? l.managerName, canChange: state.isBoss) { pickManager = true }
+                        if !state.isBoss && (l.manager ?? "").isEmpty {
+                            Button { Task { do { try await state.takeLead(l) } catch { self.error = error.localizedDescription } } } label: { Text("Взять себе") }
+                                .buttonStyle(GoldButtonStyle()).listRowBackground(Color.clear).listRowInsets(EdgeInsets())
+                        }
+                    }
                     Section("Статус") {
                         Picker("Статус", selection: $status) {
                             ForEach(leadStatuses) { Text($0.label).tag($0.id) }
@@ -74,13 +84,14 @@ struct LeadDetailView: View {
             }
             .onAppear { if let l = lead { status = l.status; comment = l.comment ?? "" } }
             .sheet(isPresented: $showOrder, onDismiss: { if let l = lead { status = l.status } }) { NewOrderView(lead: lead) }
+            .sheet(isPresented: $pickManager) { StaffPicker(title: "Ответственный за заявку", selected: manager ?? lead?.manager, allowNone: true) { manager = $0 } }
         }
     }
 
     private func save() async {
         guard let l = lead else { return }
         busy = true; defer { busy = false }
-        do { try await state.setLeadStatus(l, status, comment: comment); dismiss() }
+        do { try await state.setLeadStatus(l, status, comment: comment, manager: manager); dismiss() }
         catch { self.error = error.localizedDescription }
     }
     private func call(_ phone: String) {

@@ -25,6 +25,13 @@ struct ChatRoomView: View {
     @State private var viewer: ChatMessage?
     @State private var shareURL: URL?
     @StateObject private var locator = OneShotLocation()
+    @StateObject private var recorder = VoiceRecorder()
+    @State private var receipts: [Receipt] = []
+    @State private var lastTypingSent = Date.distantPast
+    @State private var forwarding: ChatMessage?
+    @State private var showInfo = false
+    @State private var search = ""
+    @State private var searching = false
     @FocusState private var focused: Bool
 
     private var room: ChatRoom? { state.rooms.first { $0.id == roomId } }
@@ -37,13 +44,26 @@ struct ChatRoomView: View {
                     if loaded && messages.isEmpty {
                         Text("Напишите первое сообщение").font(.system(size: 14)).foregroundStyle(Theme.muted).padding(.top, 40)
                     }
-                    ForEach(Array(messages.enumerated()), id: \.element.id) { i, m in
-                        let showName = room?.kind == "group" && m.senderId != myId && (i == 0 || messages[i - 1].senderId != m.senderId)
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { i, m in
+                        let prev: ChatMessage? = i > 0 ? shown[i - 1] : nil
+                        let showName = room?.kind == "group" && m.senderId != myId && prev?.senderId != m.senderId
+                        if dayKey(m) != (prev.map { dayKey($0) } ?? "") {
+                            Text(dayTitle(m)).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.muted)
+                                .padding(.horizontal, 12).padding(.vertical, 4).background(Theme.card, in: Capsule()).padding(.vertical, 6)
+                        }
                         Bubble(message: m, mine: m.senderId == myId, showName: showName,
+                               showAvatar: room?.kind == "group" && m.senderId != myId,
+                               readState: readState(m),
                                onReact: { e in Task { await react(m, e) } },
                                onOpen: { Task { await open(m) } })
                             .id(m.id)
                             .contextMenu { menu(for: m) }
+                            .simultaneousGesture(DragGesture(minimumDistance: 25).onEnded { v in
+                                if v.translation.width < -60 && abs(v.translation.height) < 40 && !m.deleted {
+                                    replyTo = m; editing = nil; focused = true
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }
+                            })
                     }
                     Color.clear.frame(height: 4).id("bottom")
                 }
@@ -57,13 +77,38 @@ struct ChatRoomView: View {
         .safeAreaInset(edge: .bottom) { composer }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { withAnimation { searching.toggle(); if !searching { search = "" } } } label: { Image(systemName: "magnifyingglass") }
+            }
             ToolbarItem(placement: .principal) {
+                Button { showInfo = true } label: {
                 VStack(spacing: 0) {
                     Text(room?.title ?? "Чат").font(.system(size: 16, weight: .semibold))
                     if !typing.isEmpty { Text(typing.joined(separator: ", ") + " печатает…").font(.system(size: 11)).foregroundStyle(Theme.green) }
-                    else if room?.kind == "group" { Text("\(room?.memberCount ?? 0) участн.").font(.system(size: 11)).foregroundStyle(Theme.muted) }
+                    else if room?.kind == "group" { Text("\(room?.memberCount ?? 0) участн. · инфо").font(.system(size: 11)).foregroundStyle(Theme.muted) }
+                    else { Text("профиль").font(.system(size: 11)).foregroundStyle(Theme.muted) }
+                }
+                .foregroundStyle(Theme.text)
                 }
             }
+        }
+        .safeAreaInset(edge: .top) {
+            if searching {
+                HStack {
+                    Image(systemName: "magnifyingglass").foregroundStyle(Theme.muted)
+                    TextField("Поиск в чате", text: $search).textInputAutocapitalization(.never)
+                    if !search.isEmpty { Text("\(shown.count)").font(.system(size: 13)).foregroundStyle(Theme.muted) }
+                }
+                .padding(10).background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.horizontal, 12).padding(.vertical, 6).background(.ultraThinMaterial)
+            }
+        }
+        .sheet(isPresented: $showInfo) { ChatInfoView(roomId: roomId) }
+        .sheet(item: $forwarding) { m in ForwardPicker(message: m, currentRoom: roomId) }
+        .onChange(of: text) { t in
+            guard editing == nil, !t.isEmpty, Date().timeIntervalSince(lastTypingSent) > 4 else { return }
+            lastTypingSent = Date()
+            Task { _ = try? await API.shared.post("/api/chat.php?action=typing", ["room_id": rid], as: OkResponse.self) }
         }
         .alert("Не получилось", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("Понятно", role: .cancel) {}
@@ -111,6 +156,9 @@ struct ChatRoomView: View {
                 }
             }
             Button { replyTo = m; editing = nil; focused = true } label: { Label("Ответить", systemImage: "arrowshape.turn.up.left") }
+            if m.attachmentId == nil {
+                Button { forwarding = m } label: { Label("Переслать", systemImage: "arrowshape.turn.up.right") }
+            }
             if !m.isAutoLabel {
                 Button { UIPasteboard.general.string = m.body } label: { Label("Скопировать", systemImage: "doc.on.doc") }
             }
@@ -157,18 +205,42 @@ struct ChatRoomView: View {
                     .focused($focused)
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(Theme.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                Button { Task { await send() } } label: {
-                    Group {
-                        if sending { ProgressView().tint(Theme.onGold) }
-                        else { Image(systemName: editing != nil ? "checkmark" : "arrow.up").font(.system(size: 17, weight: .bold)) }
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && editing == nil {
+                    Button { Task { await startVoice() } } label: {
+                        Image(systemName: "mic.fill").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.onGold)
+                            .frame(width: 40, height: 40).background(Theme.goldFill, in: Circle())
                     }
-                    .foregroundStyle(Theme.onGold)
-                    .frame(width: 40, height: 40).background(Theme.goldFill, in: Circle())
+                    .disabled(sending)
+                } else {
+                    Button { Task { await send() } } label: {
+                        Group {
+                            if sending { ProgressView().tint(Theme.onGold) }
+                            else { Image(systemName: editing != nil ? "checkmark" : "arrow.up").font(.system(size: 17, weight: .bold)) }
+                        }
+                        .foregroundStyle(Theme.onGold)
+                        .frame(width: 40, height: 40).background(Theme.goldFill, in: Circle())
+                    }
+                    .disabled(sending)
                 }
-                .disabled(sending || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .opacity(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
+            .overlay {
+                if recorder.isRecording {
+                    HStack(spacing: 12) {
+                        Circle().fill(Theme.red).frame(width: 10, height: 10)
+                        TimelineView(.periodic(from: .now, by: 1)) { _ in
+                            Text(recorder.elapsedText).font(.system(size: 16, weight: .semibold)).monospacedDigit()
+                        }
+                        Spacer()
+                        Button("Отмена") { recorder.cancel() }.foregroundStyle(Theme.red)
+                        Button { Task { await finishVoice() } } label: {
+                            Image(systemName: "arrow.up").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.onGold)
+                                .frame(width: 40, height: 40).background(Theme.goldFill, in: Circle())
+                        }
+                    }
+                    .padding(.horizontal, 16).frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.bg)
+                }
+            }
         }
         .background(.ultraThinMaterial)
     }
@@ -177,11 +249,44 @@ struct ChatRoomView: View {
 
     private var rid: Int { Int(roomId) ?? 0 }
 
+    private var shown: [ChatMessage] {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty ? messages : messages.filter { $0.body.lowercased().contains(q) || $0.senderName.lowercased().contains(q) }
+    }
+    private func dayKey(_ m: ChatMessage) -> String {
+        guard let d = parseSQLDate(m.createdAt) else { return "" }
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
+        return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
+    }
+    private func dayTitle(_ m: ChatMessage) -> String {
+        guard let d = parseSQLDate(m.createdAt) else { return "" }
+        if Calendar.current.isDateInToday(d) { return "Сегодня" }
+        if Calendar.current.isDateInYesterday(d) { return "Вчера" }
+        let f = DateFormatter(); f.locale = Locale(identifier: "ru_RU"); f.dateFormat = "d MMMM"
+        return f.string(from: d)
+    }
+    /// 0 — не моё, 1 — отправлено ✓, 2 — прочитано ✓✓
+    private func readState(_ m: ChatMessage) -> Int {
+        guard m.senderId == myId else { return 0 }
+        return receipts.contains { $0.read >= m.numericId } ? 2 : 1
+    }
+
+    private func startVoice() async {
+        if let e = await recorder.start() { error = e }
+    }
+    private func finishVoice() async {
+        guard let url = recorder.stop() else { return }
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard let data = try? Data(contentsOf: url), data.count > 1500 else { error = "Слишком короткое голосовое"; return }
+        await upload(data: data, name: "voice.m4a", mime: "audio/mp4")
+    }
+
     private func load(initial: Bool) async {
         do {
             let r: MessagesResponse = try await API.shared.get("/api/chat.php?action=messages&room_id=\(roomId)")
             if r.messages != messages { messages = r.messages }
             typing = r.typing ?? []
+            receipts = r.receipts ?? []
             loaded = true
             if let last = r.messages.last, last.senderId != myId {
                 _ = try? await API.shared.post("/api/chat.php?action=read", ["room_id": rid, "last_id": last.numericId], as: OkResponse.self)
@@ -277,12 +382,17 @@ struct Bubble: View {
     let message: ChatMessage
     let mine: Bool
     let showName: Bool
+    var showAvatar = false
+    var readState = 0
     var onReact: (String) -> Void = { _ in }
     var onOpen: () -> Void = {}
 
+    private var isVoice: Bool { (message.attachmentName ?? "").lowercased().hasSuffix(".m4a") }
+
     var body: some View {
-        HStack {
+        HStack(alignment: .bottom, spacing: 6) {
             if mine { Spacer(minLength: 50) }
+            if showAvatar { Avatar(userId: message.senderId, name: message.senderName, size: 28) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
                 VStack(alignment: .leading, spacing: 4) {
                     if showName { Text(message.senderName).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.gold) }
@@ -298,7 +408,9 @@ struct Bubble: View {
                         Text("Сообщение удалено").italic().foregroundStyle(Theme.muted)
                     } else {
                         if let aid = message.attachmentId {
-                            if message.attachmentIsImage {
+                            if isVoice {
+                                VoicePlayerView(path: "/api/chat-file.php?id=\(aid)")
+                            } else if message.attachmentIsImage {
                                 AuthImage(path: "/api/chat-file.php?id=\(aid)")
                                     .frame(maxWidth: 230, maxHeight: 260)
                                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -320,6 +432,10 @@ struct Bubble: View {
                         Spacer(minLength: 0)
                         if message.edited && !message.deleted { Text("изм.").font(.system(size: 10)) }
                         if let d = parseSQLDate(message.createdAt) { Text(d.formatted(date: .omitted, time: .shortened)).font(.system(size: 11)) }
+                        if readState > 0 {
+                            Image(systemName: readState == 2 ? "checkmark.circle.fill" : "checkmark")
+                                .font(.system(size: 10, weight: .bold)).foregroundStyle(readState == 2 ? Theme.gold : Theme.muted)
+                        }
                     }
                     .foregroundStyle(Theme.muted)
                 }

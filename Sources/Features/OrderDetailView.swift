@@ -6,6 +6,8 @@ struct OrderDetailView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var showStatuses = false
+    @State private var pickManager = false
+    @State private var newTask = false
     @Environment(\.openURL) private var openURL
 
     private var order: Order? { state.orders.first { $0.id == orderId } }
@@ -35,7 +37,10 @@ struct OrderDetailView: View {
                 }
                 .padding(.horizontal, 4)
 
+                ResponsibleRow(userId: o.manager, name: o.managerName, canChange: state.isBoss) { pickManager = true }
+                    .card(padding: 14)
                 clientCard(o)
+                tasksCard(o)
                 itemsCard(o)
                 deliveryCard(o)
                 if let c = o.comment, !c.isEmpty {
@@ -50,6 +55,12 @@ struct OrderDetailView: View {
         }
         .refreshable { await state.refreshOrders() }
         .safeAreaInset(edge: .bottom) { actionBar(o) }
+        .sheet(isPresented: $pickManager) {
+            StaffPicker(title: "Ответственный за заказ", selected: o.manager, allowNone: true) { id in
+                Task { busy = true; defer { busy = false }; do { try await state.updateOrder(o, manager: id); haptic() } catch { self.error = error.localizedDescription } }
+            }
+        }
+        .sheet(isPresented: $newTask) { NewTaskView(orderId: o.id, presetTitle: "По заказу \(o.number): ") }
         .confirmationDialog("Статус заказа", isPresented: $showStatuses, titleVisibility: .visible) {
             ForEach(orderStatuses.filter { $0 != o.status }, id: \.self) { s in
                 Button(s, role: s == "Отменён" ? .destructive : nil) { Task { await change(o, s) } }
@@ -78,6 +89,22 @@ struct OrderDetailView: View {
                 Label(v, systemImage: "car.fill").font(.system(size: 14)).foregroundStyle(Theme.green)
                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }.card()
+    }
+
+    private func tasksCard(_ o: Order) -> some View {
+        let list = state.tasks.filter { $0.orderId == o.id && $0.isOpen }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack { SectionTitle("Задачи по заказу"); Spacer(); Button { newTask = true } label: { Label("Задача", systemImage: "plus") }.font(.system(size: 14, weight: .semibold)) }
+            if list.isEmpty { Text("Открытых задач нет").font(.system(size: 14)).foregroundStyle(Theme.muted) }
+            ForEach(list) { t in
+                HStack(spacing: 8) {
+                    Circle().fill(taskStatusColor(t.status)).frame(width: 8, height: 8)
+                    Text(t.title).font(.system(size: 14)).lineLimit(1)
+                    Spacer()
+                    Avatar(userId: t.responsibleId, name: t.responsibleName, size: 22)
+                }
             }
         }.card()
     }

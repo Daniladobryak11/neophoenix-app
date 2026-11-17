@@ -45,20 +45,22 @@ struct SplashView: View {
 struct MainTabs: View {
     @EnvironmentObject var state: AppState
     var body: some View {
-        TabView {
+        TabView(selection: $state.selectedTab) {
             OrdersView()
                 .tabItem { Label("Заказы", systemImage: "doc.text") }
-                .badge(state.newOrders)
+                .badge(state.newOrders).tag(0)
             LeadsView()
                 .tabItem { Label("Заявки", systemImage: "bubble.left") }
-                .badge(state.newLeads)
-            ComingSoonView(title: "Задачи", icon: "checkmark.square", text: "Мои задачи, сроки и отметка «выполнено» — в следующей версии.")
+                .badge(state.newLeads).tag(1)
+            TasksView()
                 .tabItem { Label("Задачи", systemImage: "checkmark.square") }
+                .badge(state.myTasksOpen).tag(2)
             ChatsView()
                 .tabItem { Label("Чаты", systemImage: "bubble.left.and.bubble.right") }
-                .badge(state.unreadChats)
+                .badge(state.unreadChats).tag(3)
             MeView()
                 .tabItem { Label("Я", systemImage: "person.crop.circle") }
+                .tag(4)
         }
     }
 }

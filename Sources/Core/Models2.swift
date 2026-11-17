@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Сервер отдаёт id то числом, то строкой — читаем любой вариант.
 extension KeyedDecodingContainer {
@@ -114,7 +115,7 @@ struct ChatMessage: Decodable, Hashable, Identifiable {
         reactions = (try? c.decodeIfPresent([Reaction].self, forKey: .reactions)) ?? []
     }
     /// Подпись к файлу сервер пишет сам («📷 имя.jpg») — её не показываем отдельно.
-    var isAutoLabel: Bool { attachmentId != nil && (body.hasPrefix("📷 ") || body.hasPrefix("📎 ")) }
+    var isAutoLabel: Bool { attachmentId != nil && (body.hasPrefix("📷 ") || body.hasPrefix("📎 ") || body.hasPrefix("🎤 ")) }
     var numericId: Int { Int(id) ?? 0 }
 }
 struct Reaction: Decodable, Hashable {
@@ -224,3 +225,114 @@ struct Opt: Hashable, Identifiable { let id: String; let label: String }
 let leadKinds = [Opt(id: "callback", label: "Перезвонить"), Opt(id: "question", label: "Вопрос"), Opt(id: "fitment", label: "Подбор"), Opt(id: "product", label: "Вопрос о товаре")]
 let leadSources = ["Авито", "Звонок", "Мессенджер"]
 let leadStatuses = [Opt(id: "new", label: "Новая"), Opt(id: "work", label: "В работе"), Opt(id: "done", label: "Обработана"), Opt(id: "spam", label: "Спам")]
+
+// MARK: - Профиль сотрудника
+
+struct StaffProfile: Decodable, Hashable, Identifiable {
+    let id: String
+    let name: String
+    let role: String
+    let email: String
+    let phone: String
+    let birthday: String
+    let telegram: String
+    let avatar: String
+    enum K: String, CodingKey { case id, name, role, email, phone, birthday, telegram, avatar }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: K.self)
+        id = c.flexString(.id) ?? ""; name = c.flexString(.name) ?? ""; role = c.flexString(.role) ?? ""
+        email = c.flexString(.email) ?? ""; phone = c.flexString(.phone) ?? ""
+        birthday = c.flexString(.birthday) ?? ""; telegram = c.flexString(.telegram) ?? ""; avatar = c.flexString(.avatar) ?? ""
+    }
+    var birthDate: Date? {
+        guard !birthday.isEmpty else { return nil }
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: birthday)
+    }
+    var birthdayText: String {
+        guard let d = birthDate else { return "" }
+        let f = DateFormatter(); f.locale = Locale(identifier: "ru_RU"); f.dateFormat = "d MMMM yyyy"
+        return f.string(from: d)
+    }
+    var isBirthdayToday: Bool {
+        guard let d = birthDate else { return false }
+        let cal = Calendar.current
+        return cal.component(.day, from: d) == cal.component(.day, from: Date()) && cal.component(.month, from: d) == cal.component(.month, from: Date())
+    }
+}
+struct StaffProfilesResponse: Decodable { let ok: Bool; let staff: [StaffProfile] }
+
+// MARK: - Задачи
+
+struct TaskCan: Decodable, Hashable {
+    let edit: Bool, start: Bool, finish: Bool, accept: Bool, ret: Bool, defer_: Bool, check: Bool, comment: Bool, delete: Bool
+    enum K: String, CodingKey { case edit, start, finish, accept, ret = "return", defer_ = "defer", check, comment, delete }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: K.self)
+        func b(_ k: K) -> Bool { c.flexInt(k) == 1 }
+        edit = b(.edit); start = b(.start); finish = b(.finish); accept = b(.accept); ret = b(.ret)
+        defer_ = b(.defer_); check = b(.check); comment = b(.comment); delete = b(.delete)
+    }
+}
+struct CheckItem: Decodable, Hashable, Identifiable {
+    let id: String; let text: String; let done: Bool
+    enum K: String, CodingKey { case id, text, done }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: K.self)
+        id = c.flexString(.id) ?? ""; text = c.flexString(.text) ?? ""; done = c.flexInt(.done) == 1
+    }
+}
+struct FeedItem: Decodable, Hashable, Identifiable {
+    let id: String; let kind: String; let userId: String; let name: String; let body: String; let createdAt: String
+    enum K: String, CodingKey { case id, kind, userId, name, body, createdAt }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: K.self)
+        id = c.flexString(.id) ?? ""; kind = c.flexString(.kind) ?? ""; userId = c.flexString(.userId) ?? ""
+        name = c.flexString(.name) ?? ""; body = c.flexString(.body) ?? ""; createdAt = c.flexString(.createdAt) ?? ""
+    }
+}
+struct TaskItem: Decodable, Hashable, Identifiable {
+    let id: String
+    let title: String
+    let description: String
+    let status: String
+    let statusLabel: String
+    let priority: String
+    let deadline: String
+    let deadlineLocal: String
+    let overdue: Bool
+    let creatorId: String
+    let creatorName: String
+    let responsibleId: String
+    let responsibleName: String
+    let orderId: String
+    let orderNumber: String
+    let checkTotal: Int
+    let checkDone: Int
+    let comments: Int
+    let checklist: [CheckItem]
+    let feed: [FeedItem]
+    let can: TaskCan?
+    enum K: String, CodingKey { case id, title, description, status, statusLabel, priority, deadline, deadlineLocal, overdue, creatorId, creatorName, responsibleId, responsibleName, orderId, orderNumber, checkTotal, checkDone, comments, checklist, feed, can }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: K.self)
+        id = c.flexString(.id) ?? ""; title = c.flexString(.title) ?? ""; description = c.flexString(.description) ?? ""
+        status = c.flexString(.status) ?? "new"; statusLabel = c.flexString(.statusLabel) ?? ""; priority = c.flexString(.priority) ?? "normal"
+        deadline = c.flexString(.deadline) ?? ""; deadlineLocal = c.flexString(.deadlineLocal) ?? ""; overdue = c.flexInt(.overdue) == 1
+        creatorId = c.flexString(.creatorId) ?? ""; creatorName = c.flexString(.creatorName) ?? ""
+        responsibleId = c.flexString(.responsibleId) ?? ""; responsibleName = c.flexString(.responsibleName) ?? ""
+        orderId = c.flexString(.orderId) ?? ""; orderNumber = c.flexString(.orderNumber) ?? ""
+        checkTotal = c.flexInt(.checkTotal); checkDone = c.flexInt(.checkDone); comments = c.flexInt(.comments)
+        checklist = (try? c.decodeIfPresent([CheckItem].self, forKey: .checklist)) ?? []
+        feed = (try? c.decodeIfPresent([FeedItem].self, forKey: .feed)) ?? []
+        can = try? c.decodeIfPresent(TaskCan.self, forKey: .can)
+    }
+    var isOpen: Bool { status != "done" }
+    var deadlineDate: Date? { parseISO(deadline) }
+}
+struct TasksResponse: Decodable { let ok: Bool; let tasks: [TaskItem] }
+struct TaskResponse: Decodable { let ok: Bool; let task: TaskItem }
+
+func taskStatusColor(_ s: String) -> Color {
+    switch s { case "new": return Theme.blue; case "work": return Theme.amber; case "review": return Theme.violet; case "done": return Theme.green; default: return Theme.muted }
+}

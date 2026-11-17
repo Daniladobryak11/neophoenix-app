@@ -72,6 +72,7 @@ struct Order: Decodable, Hashable, Identifiable {
     let payment: Payment?
     let payAtCheckout: Bool?
     let vehicle: String?
+    let tasks: TaskFlags?
 
     var isActive: Bool { !["Выполнен", "Отменён", "Возврат"].contains(status) }
     var deliveryLine: String {
@@ -83,6 +84,15 @@ struct Order: Decodable, Hashable, Identifiable {
         return parts.joined(separator: " · ")
     }
 }
+/// Галочки заказа из CRM (позвонить, проверить, склад, отправить). Сервер отдаёт объект или пустой массив.
+struct TaskFlags: Decodable, Hashable {
+    var flags: [String: Bool] = [:]
+    init(from d: Decoder) throws {
+        let c = try d.singleValueContainer()
+        flags = (try? c.decode([String: Bool].self)) ?? [:]
+    }
+}
+
 struct OrdersResponse: Decodable { let ok: Bool; let orders: [Order] }
 
 struct Lead: Decodable, Hashable, Identifiable {

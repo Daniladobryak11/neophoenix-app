@@ -40,12 +40,15 @@ struct RoomRow: View {
     let myId: String
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(Theme.gold.opacity(0.16))
-                if room.kind == "group" { Image(systemName: "person.3.fill").font(.system(size: 15)).foregroundStyle(Theme.gold) }
-                else { Text(initials(room.title)).font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.gold) }
+            if room.kind == "group" {
+                ZStack {
+                    Circle().fill(Theme.gold.opacity(0.16))
+                    Image(systemName: "person.3.fill").font(.system(size: 15)).foregroundStyle(Theme.gold)
+                }
+                .frame(width: 46, height: 46)
+            } else {
+                Avatar(userId: room.members.first { $0.id != myId }?.id, name: room.title, size: 46)
             }
-            .frame(width: 46, height: 46)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(room.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)

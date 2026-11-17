@@ -18,6 +18,11 @@ final class AppState: ObservableObject {
     @Published var chatsError: String?
     @Published var chatPath: [String] = []
     @Published var work: WorkStatus?
+    @Published var staff: [StaffProfile] = []
+    @Published var selectedTab = 0
+    @Published var tasks: [TaskItem] = []
+    @Published var tasksError: String?
+    @Published var tasksLoaded = false
     @Published var workBusy = false
 
     @AppStorage("faceID") var faceIDEnabled = false
@@ -28,6 +33,10 @@ final class AppState: ObservableObject {
     var newOrders: Int { orders.filter { $0.status == "Новый" }.count }
     var unreadChats: Int { rooms.reduce(0) { $0 + $1.unread } }
     var onShift: Bool { work?.open != nil }
+    var isBoss: Bool { user?.role == "owner" || user?.role == "admin" }
+    var myTasksOpen: Int { tasks.filter { $0.responsibleId == user?.id && ($0.status == "new" || $0.overdue) }.count }
+    func profile(_ id: String?) -> StaffProfile? { guard let id else { return nil }; return staff.first { $0.id == id } }
+    var me: StaffProfile? { profile(user?.id) }
 
     init() {
         API.shared.onUnauthorized = { [weak self] in self?.signOutLocally() }
@@ -79,7 +88,7 @@ final class AppState: ObservableObject {
 
     func signOutLocally() {
         API.shared.token = nil
-        user = nil; orders = []; leads = []; rooms = []; work = nil; chatPath = []
+        user = nil; orders = []; leads = []; rooms = []; work = nil; chatPath = []; staff = []; tasks = []
         phase = .loggedOut
     }
 
@@ -88,7 +97,9 @@ final class AppState: ObservableObject {
         async let b: Void = refreshLeads()
         async let c: Void = refreshRooms()
         async let d: Void = refreshWork()
-        _ = await (a, b, c, d)
+        async let e: Void = refreshStaff()
+        async let f: Void = refreshTasks()
+        _ = await (a, b, c, d, e, f)
         lastSync = Date()
     }
 
@@ -106,6 +117,16 @@ final class AppState: ObservableObject {
         do { let r: RoomsResponse = try await API.shared.get("/api/chat.php?action=rooms"); rooms = r.rooms; chatsError = nil }
         catch { chatsError = error.localizedDescription }
         roomsLoaded = true
+    }
+
+    func refreshStaff() async {
+        if let r = try? await API.shared.get("/api/profile.php?action=staff", as: StaffProfilesResponse.self) { staff = r.staff }
+    }
+
+    func refreshTasks() async {
+        do { let r: TasksResponse = try await API.shared.get("/api/tasks.php?action=list"); tasks = r.tasks; tasksError = nil }
+        catch { tasksError = error.localizedDescription }
+        tasksLoaded = true
     }
 
     func refreshWork() async {
@@ -130,19 +151,26 @@ final class AppState: ObservableObject {
         orders = r.orders
     }
 
-    func setStatus(_ o: Order, _ status: String) async throws {
-        let r: OrdersResponse = try await API.shared.post("/api/orders.php?action=update", ["id": o.id, "status": status])
+    /// Сервер CRM при сохранении заказа перезаписывает комментарий, галочки и менеджера,
+    /// поэтому всегда отправляем их текущие значения — иначе они сотрутся.
+    func updateOrder(_ o: Order, status: String? = nil, manager: String? = nil) async throws {
+        var body: [String: Any] = ["id": Int(o.id) ?? 0, "status": status ?? o.status, "comment": o.comment ?? "", "tasks": o.tasks?.flags ?? [:]]
+        if isBoss { body["manager"] = manager ?? (o.manager ?? "") }
+        let r: OrdersResponse = try await API.shared.post("/api/orders.php?action=update", body)
         orders = r.orders
     }
+
+    func setStatus(_ o: Order, _ status: String) async throws { try await updateOrder(o, status: status) }
 
     func takeLead(_ l: Lead) async throws {
         let r: LeadsResponse = try await API.shared.post("/api/leads.php?action=take", ["id": l.id])
         leads = r.leads
     }
 
-    func setLeadStatus(_ l: Lead, _ status: String, comment: String? = nil) async throws {
+    func setLeadStatus(_ l: Lead, _ status: String, comment: String? = nil, manager: String? = nil) async throws {
         var body: [String: Any] = ["id": l.id, "status": status]
         if let comment { body["comment"] = comment }
+        if isBoss, let manager { body["manager"] = manager }
         let r: LeadsResponse = try await API.shared.post("/api/leads.php?action=update", body)
         leads = r.leads
     }

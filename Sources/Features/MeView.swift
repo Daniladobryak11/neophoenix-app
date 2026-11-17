@@ -9,15 +9,17 @@ struct MeView: View {
         NavigationStack {
             List {
                 Section {
-                    HStack(spacing: 14) {
-                        Text(initials(state.user?.name ?? "")).font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.gold)
-                            .frame(width: 52, height: 52).background(Theme.gold.opacity(0.14), in: Circle())
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(state.user?.name ?? "—").font(.system(size: 18, weight: .semibold))
-                            Text(state.user?.roleLabel ?? "").font(.system(size: 14)).foregroundStyle(Theme.muted)
+                    NavigationLink { StaffProfileView(staffId: state.user?.id ?? "") } label: {
+                        HStack(spacing: 14) {
+                            Avatar(userId: state.user?.id, name: state.user?.name ?? "", size: 56)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(state.me?.name ?? state.user?.name ?? "—").font(.system(size: 18, weight: .semibold))
+                                Text((state.user?.roleLabel ?? "") + " · мой профиль").font(.system(size: 14)).foregroundStyle(Theme.muted)
+                            }
                         }
+                        .padding(.vertical, 6)
                     }
-                    .padding(.vertical, 6)
+                    NavigationLink { StaffListView() } label: { Label("Сотрудники", systemImage: "person.2") }
                 }
                 Section {
                     ShiftCard().listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
