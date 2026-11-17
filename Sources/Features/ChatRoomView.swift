@@ -45,25 +45,7 @@ struct ChatRoomView: View {
                         Text("Напишите первое сообщение").font(.system(size: 14)).foregroundStyle(Theme.muted).padding(.top, 40)
                     }
                     ForEach(Array(shown.enumerated()), id: \.element.id) { i, m in
-                        let prev: ChatMessage? = i > 0 ? shown[i - 1] : nil
-                        let showName = room?.kind == "group" && m.senderId != myId && prev?.senderId != m.senderId
-                        if dayKey(m) != (prev.map { dayKey($0) } ?? "") {
-                            Text(dayTitle(m)).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.muted)
-                                .padding(.horizontal, 12).padding(.vertical, 4).background(Theme.card, in: Capsule()).padding(.vertical, 6)
-                        }
-                        Bubble(message: m, mine: m.senderId == myId, showName: showName,
-                               showAvatar: room?.kind == "group" && m.senderId != myId,
-                               readState: readState(m),
-                               onReact: { e in Task { await react(m, e) } },
-                               onOpen: { Task { await open(m) } })
-                            .id(m.id)
-                            .contextMenu { menu(for: m) }
-                            .simultaneousGesture(DragGesture(minimumDistance: 25).onEnded { v in
-                                if v.translation.width < -60 && abs(v.translation.height) < 40 && !m.deleted {
-                                    replyTo = m; editing = nil; focused = true
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                }
-                            })
+                        row(i, m)
                     }
                     Color.clear.frame(height: 4).id("bottom")
                 }
@@ -142,6 +124,36 @@ struct ChatRoomView: View {
             }
         }
         .onDisappear { Task { await state.refreshRooms() } }
+    }
+
+    // MARK: строка переписки
+
+    @ViewBuilder private func row(_ i: Int, _ m: ChatMessage) -> some View {
+        let prev: ChatMessage? = i > 0 ? shown[i - 1] : nil
+        if dayKey(m) != (prev.map { dayKey($0) } ?? "") {
+            DayChip(title: dayTitle(m))
+        }
+        bubble(m, prev: prev)
+    }
+
+    private func bubble(_ m: ChatMessage, prev: ChatMessage?) -> some View {
+        let isGroup = room?.kind == "group"
+        let mine = m.senderId == myId
+        let showName = isGroup && !mine && prev?.senderId != m.senderId
+        return Bubble(message: m, mine: mine, showName: showName, showAvatar: isGroup && !mine, readState: readState(m),
+                      onReact: { e in Task { await react(m, e) } },
+                      onOpen: { Task { await open(m) } })
+            .id(m.id)
+            .contextMenu { menu(for: m) }
+            .simultaneousGesture(swipeToReply(m))
+    }
+
+    private func swipeToReply(_ m: ChatMessage) -> some Gesture {
+        DragGesture(minimumDistance: 25).onEnded { v in
+            guard v.translation.width < -60, abs(v.translation.height) < 40, !m.deleted else { return }
+            replyTo = m; editing = nil; focused = true
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
     }
 
     // MARK: меню сообщения
@@ -600,5 +612,15 @@ final class OneShotLocation: NSObject, ObservableObject, CLLocationManagerDelega
     }
     nonisolated func locationManager(_ m: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor in self.finish(nil) }
+    }
+}
+
+struct DayChip: View {
+    let title: String
+    var body: some View {
+        Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.muted)
+            .padding(.horizontal, 12).padding(.vertical, 4)
+            .background(Theme.card, in: Capsule())
+            .padding(.vertical, 6)
     }
 }
