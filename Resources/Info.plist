@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
+	<string>ru</string>
 	<key>CFBundleDisplayName</key>
 	<string>Нео Феникс</string>
 	<key>CFBundleExecutable</key>
@@ -22,35 +22,25 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-
-	<!-- 让 WKWebView 里的 Service Worker 能用（缓存静态资源、离线可用）。
-	     不加这条 = navigator.serviceWorker 压根不存在，每次冷启动全量走网络。
-	     ★ 改成你自己的域名 -->
-	<key>WKAppBoundDomains</key>
+	<key>LSApplicationQueriesSchemes</key>
 	<array>
-		<string>neophoenix.ru</string>
+		<string>whatsapp</string>
+		<string>tel</string>
 	</array>
-
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
-
-	<key>UIViewControllerBasedStatusBarAppearance</key>
-	<true/>
-
 	<key>UILaunchScreen</key>
-	<dict/>
-
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Вход в приложение по Face ID вместо пароля.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Allow camera access</string>
+	<string>Чтобы сфотографировать товар или документ и прикрепить к заказу или в чат.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Allow photo library access</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Save images to photo library</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Allow microphone access</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Allow location access</string>
+	<string>Чтобы прикрепить фото из галереи к заказу или в чат.</string>
 </dict>
 </plist>

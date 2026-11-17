@@ -1,25 +1,25 @@
-name: WebViewShell
+name: NeoPhoenix
 options:
-  bundleIdPrefix: com.example
+  bundleIdPrefix: ru.neophoenix
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
 
 settings:
   base:
-    MARKETING_VERSION: "1.0"
+    MARKETING_VERSION: "0.1"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
-    # 无签名构建：CI 上没证书，第三方签名工具会重签
+    # Сборка в облаке без подписи. Подпись появится вместе с аккаунтом разработчика Apple.
     CODE_SIGN_IDENTITY: ""
     CODE_SIGNING_REQUIRED: NO
     CODE_SIGNING_ALLOWED: NO
     CODE_SIGN_ENTITLEMENTS: ""
 
 targets:
-  WebViewShell:
+  NeoPhoenix:
     type: application
     platform: iOS
     sources:
@@ -29,8 +29,9 @@ targets:
           - "Info.plist"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.webviewshell
-        PRODUCT_NAME: WebViewShell
+        PRODUCT_BUNDLE_IDENTIFIER: ru.neophoenix.team
+        PRODUCT_NAME: NeoPhoenix
         INFOPLIST_FILE: Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
