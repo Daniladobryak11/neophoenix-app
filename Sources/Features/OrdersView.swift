@@ -27,6 +27,7 @@ struct OrdersView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    ShiftBanner()
                     stats
                     filters
                     if let e = state.ordersError, state.orders.isEmpty {
@@ -44,7 +45,7 @@ struct OrdersView: View {
                 .padding(.horizontal, 16).padding(.bottom, 20)
             }
             .background(Theme.bg)
-            .refreshable { await state.refreshOrders() }
+            .refreshable { async let a: Void = state.refreshOrders(); async let b: Void = state.refreshWork(); _ = await (a, b) }
             .searchable(text: $query, prompt: "Номер, клиент, телефон, трек")
             .navigationTitle("Заказы")
             .navigationDestination(for: String.self) { id in OrderDetailView(orderId: id) }

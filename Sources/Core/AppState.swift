@@ -13,6 +13,12 @@ final class AppState: ObservableObject {
     @Published var ordersError: String?
     @Published var leadsError: String?
     @Published var lastSync: Date?
+    @Published var rooms: [ChatRoom] = []
+    @Published var roomsLoaded = false
+    @Published var chatsError: String?
+    @Published var chatPath: [String] = []
+    @Published var work: WorkStatus?
+    @Published var workBusy = false
 
     @AppStorage("faceID") var faceIDEnabled = false
     @AppStorage("theme") var theme = "auto" // auto | light | dark
@@ -20,6 +26,8 @@ final class AppState: ObservableObject {
     var colorScheme: ColorScheme? { theme == "light" ? .light : theme == "dark" ? .dark : nil }
     var newLeads: Int { leads.filter { $0.status == "new" }.count }
     var newOrders: Int { orders.filter { $0.status == "Новый" }.count }
+    var unreadChats: Int { rooms.reduce(0) { $0 + $1.unread } }
+    var onShift: Bool { work?.open != nil }
 
     init() {
         API.shared.onUnauthorized = { [weak self] in self?.signOutLocally() }
@@ -71,14 +79,16 @@ final class AppState: ObservableObject {
 
     func signOutLocally() {
         API.shared.token = nil
-        user = nil; orders = []; leads = []
+        user = nil; orders = []; leads = []; rooms = []; work = nil; chatPath = []
         phase = .loggedOut
     }
 
     func refreshAll() async {
         async let a: Void = refreshOrders()
         async let b: Void = refreshLeads()
-        _ = await (a, b)
+        async let c: Void = refreshRooms()
+        async let d: Void = refreshWork()
+        _ = await (a, b, c, d)
         lastSync = Date()
     }
 
@@ -90,6 +100,27 @@ final class AppState: ObservableObject {
     func refreshLeads() async {
         do { let r: LeadsResponse = try await API.shared.get("/api/leads.php?action=list"); leads = r.leads; leadsError = nil }
         catch { leadsError = error.localizedDescription }
+    }
+
+    func refreshRooms() async {
+        do { let r: RoomsResponse = try await API.shared.get("/api/chat.php?action=rooms"); rooms = r.rooms; chatsError = nil }
+        catch { chatsError = error.localizedDescription }
+        roomsLoaded = true
+    }
+
+    func refreshWork() async {
+        if let w: WorkStatus = try? await API.shared.get("/api/worktime.php?action=status") { work = w }
+    }
+
+    /// Начать или закончить смену. Возвращает текст ошибки, если сервер отказал.
+    func toggleShift() async -> String? {
+        workBusy = true; defer { workBusy = false }
+        do {
+            let w: WorkStatus = try await API.shared.post("/api/worktime.php?action=" + (onShift ? "stop" : "start"))
+            work = w
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            return nil
+        } catch { return error.localizedDescription }
     }
 
     // MARK: действия
@@ -109,8 +140,15 @@ final class AppState: ObservableObject {
         leads = r.leads
     }
 
-    func setLeadStatus(_ l: Lead, _ status: String) async throws {
-        let r: LeadsResponse = try await API.shared.post("/api/leads.php?action=update", ["id": l.id, "status": status])
+    func setLeadStatus(_ l: Lead, _ status: String, comment: String? = nil) async throws {
+        var body: [String: Any] = ["id": l.id, "status": status]
+        if let comment { body["comment"] = comment }
+        let r: LeadsResponse = try await API.shared.post("/api/leads.php?action=update", body)
+        leads = r.leads
+    }
+
+    func createLead(_ fields: [String: Any]) async throws {
+        let r: LeadsResponse = try await API.shared.post("/api/leads.php?action=staff-create", fields)
         leads = r.leads
     }
 }

@@ -19,9 +19,8 @@ struct MeView: View {
                     }
                     .padding(.vertical, 6)
                 }
-                Section("Смена") {
-                    Label("Начать и закончить смену — в следующей версии", systemImage: "clock")
-                        .foregroundStyle(Theme.muted).font(.system(size: 14))
+                Section {
+                    ShiftCard().listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
                 }
                 Section("Настройки") {
                     Toggle(isOn: Binding(get: { state.faceIDEnabled }, set: { setFaceID($0) })) {
@@ -47,6 +46,7 @@ struct MeView: View {
             .scrollContentBackground(.hidden)
             .background(Theme.bg)
             .navigationTitle("Я")
+            .refreshable { await state.refreshWork() }
             .confirmationDialog("Выйти из аккаунта на этом iPhone?", isPresented: $confirmLogout, titleVisibility: .visible) {
                 Button("Выйти", role: .destructive) { Task { await state.logout() } }
                 Button("Отмена", role: .cancel) {}

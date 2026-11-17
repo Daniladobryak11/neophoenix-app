@@ -5,6 +5,8 @@ struct LeadsView: View {
     @State private var tab = "new"
     @State private var error: String?
     @State private var busyId: String?
+    @State private var openLead: String?
+    @State private var showNew = false
     @Environment(\.openURL) private var openURL
 
     private var list: [Lead] {
@@ -31,13 +33,20 @@ struct LeadsView: View {
                     } else if list.isEmpty {
                         EmptyCard(icon: "bubble.left", text: tab == "new" ? "Новых заявок нет" : "Здесь пока пусто")
                     }
-                    ForEach(list) { l in leadCard(l) }
+                    ForEach(list) { l in leadCard(l).contentShape(Rectangle()).onTapGesture { openLead = l.id } }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 20)
             }
             .background(Theme.bg)
             .refreshable { await state.refreshLeads() }
             .navigationTitle("Заявки")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showNew = true } label: { Image(systemName: "plus") }
+                }
+            }
+            .sheet(item: Binding(get: { openLead.map { IdBox(id: $0) } }, set: { openLead = $0?.id })) { box in LeadDetailView(leadId: box.id) }
+            .sheet(isPresented: $showNew) { NewLeadView() }
             .alert("Не получилось", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("Понятно", role: .cancel) {}
             } message: { Text(error ?? "") }
@@ -88,3 +97,5 @@ struct LeadsView: View {
         if let u = URL(string: "tel:\(digits)") { openURL(u) }
     }
 }
+
+struct IdBox: Identifiable { let id: String }

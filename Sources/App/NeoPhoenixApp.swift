@@ -54,8 +54,9 @@ struct MainTabs: View {
                 .badge(state.newLeads)
             ComingSoonView(title: "Задачи", icon: "checkmark.square", text: "Мои задачи, сроки и отметка «выполнено» — в следующей версии.")
                 .tabItem { Label("Задачи", systemImage: "checkmark.square") }
-            ComingSoonView(title: "Чаты", icon: "bubble.left.and.bubble.right", text: "Чаты с коллегами, фото и карточки заказов — в следующей версии.")
+            ChatsView()
                 .tabItem { Label("Чаты", systemImage: "bubble.left.and.bubble.right") }
+                .badge(state.unreadChats)
             MeView()
                 .tabItem { Label("Я", systemImage: "person.crop.circle") }
         }
