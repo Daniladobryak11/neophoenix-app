@@ -23,6 +23,7 @@ struct ChatsView: View {
             .background(Theme.bg)
             .refreshable { await state.refreshRooms() }
             .navigationTitle("Чаты")
+            .meButton()
             .navigationDestination(for: String.self) { id in ChatRoomView(roomId: id) }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {

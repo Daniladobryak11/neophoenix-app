@@ -40,6 +40,7 @@ struct LeadsView: View {
             .background(Theme.bg)
             .refreshable { await state.refreshLeads() }
             .navigationTitle("Заявки")
+            .meButton()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showNew = true } label: { Image(systemName: "plus") }

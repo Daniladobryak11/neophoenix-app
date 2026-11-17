@@ -49,6 +49,7 @@ struct OrdersView: View {
             .refreshable { async let a: Void = state.refreshOrders(); async let b: Void = state.refreshWork(); _ = await (a, b) }
             .searchable(text: $query, prompt: "Номер, клиент, телефон, трек")
             .navigationTitle("Заказы")
+            .meButton()
             .navigationDestination(for: String.self) { id in OrderDetailView(orderId: id) }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) { Button { showNew = true } label: { Image(systemName: "plus") } }

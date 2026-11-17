@@ -14,6 +14,9 @@ struct ChatRoomView: View {
     @State private var text = ""
     @State private var sending = false
     @State private var error: String?
+    @State private var showNewShip = false
+    @State private var shipOpen: String?
+    @State private var shipWarehouse = false
     @State private var loaded = false
     @State private var replyTo: ChatMessage?
     @State private var editing: ChatMessage?
@@ -60,6 +63,11 @@ struct ChatRoomView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                if room?.systemKey == "ship" {
+                    Button { showNewShip = true } label: { Image(systemName: "shippingbox.fill") }.accessibilityLabel("Новая отправка")
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button { withAnimation { searching.toggle(); if !searching { search = "" } } } label: { Image(systemName: "magnifyingglass") }
             }
             ToolbarItem(placement: .principal) {
@@ -86,6 +94,11 @@ struct ChatRoomView: View {
             }
         }
         .sheet(isPresented: $showInfo) { ChatInfoView(roomId: roomId) }
+        .sheet(isPresented: $showNewShip, onDismiss: { Task { await load(initial: false) } }) { ShipmentFormView(editing: nil) }
+        .sheet(item: Binding(get: { shipOpen.map { IdBox(id: $0) } }, set: { shipOpen = $0?.id })) { b in
+            NavigationStack { ShipmentDetailView(shipId: b.id) }
+        }
+        .task(id: room?.systemKey) { if room?.systemKey == "ship" { shipWarehouse = (await ShipStore.options())?.isWarehouse ?? false } }
         .sheet(item: $forwarding) { m in ForwardPicker(message: m, currentRoom: roomId) }
         .onChange(of: text) { t in
             guard editing == nil, !t.isEmpty, Date().timeIntervalSince(lastTypingSent) > 4 else { return }
@@ -142,7 +155,9 @@ struct ChatRoomView: View {
         let showName = isGroup && !mine && prev?.senderId != m.senderId
         return Bubble(message: m, mine: mine, showName: showName, showAvatar: isGroup && !mine, readState: readState(m),
                       onReact: { e in Task { await react(m, e) } },
-                      onOpen: { Task { await open(m) } })
+                      onOpen: { Task { await open(m) } },
+                      onShipMark: { to in Task { await shipMark(m, to) } },
+                      canShipMark: shipWarehouse)
             .id(m.id)
             .contextMenu { menu(for: m) }
             .simultaneousGesture(swipeToReply(m))
@@ -174,10 +189,13 @@ struct ChatRoomView: View {
             if !m.isAutoLabel {
                 Button { UIPasteboard.general.string = m.body } label: { Label("Скопировать", systemImage: "doc.on.doc") }
             }
-            if m.senderId == myId && m.attachmentId == nil {
+            if m.senderId == myId && m.attachmentId == nil && m.shipmentId == nil {
                 Button { editing = m; replyTo = nil; text = m.body; focused = true } label: { Label("Изменить", systemImage: "pencil") }
             }
-            if m.senderId == myId {
+            if m.shipmentId != nil {
+                Button { shipOpen = m.shipmentId } label: { Label("Открыть отправку", systemImage: "shippingbox") }
+            }
+            if m.senderId == myId && m.shipmentId == nil {
                 Button(role: .destructive) { confirmDelete = m } label: { Label("Удалить", systemImage: "trash") }
             }
         }
@@ -293,6 +311,15 @@ struct ChatRoomView: View {
         await upload(data: data, name: "voice.m4a", mime: "audio/mp4")
     }
 
+    private func shipMark(_ m: ChatMessage, _ to: String) async {
+        guard let sid = m.shipmentId else { return }
+        do {
+            _ = try await API.shared.post("/api/shipments.php?action=mark", ["id": Int(sid) ?? 0, "to": to], as: OkResponse.self)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            await load(initial: false)
+        } catch { self.error = error.localizedDescription }
+    }
+
     private func load(initial: Bool) async {
         do {
             let r: MessagesResponse = try await API.shared.get("/api/chat.php?action=messages&room_id=\(roomId)")
@@ -398,6 +425,8 @@ struct Bubble: View {
     var readState = 0
     var onReact: (String) -> Void = { _ in }
     var onOpen: () -> Void = {}
+    var onShipMark: (String) -> Void = { _ in }
+    var canShipMark = false
 
     private var isVoice: Bool { (message.attachmentName ?? "").lowercased().hasSuffix(".m4a") }
 
@@ -439,6 +468,7 @@ struct Bubble: View {
                         if !message.body.isEmpty && !message.isAutoLabel {
                             Text(linkified(message.body)).font(.system(size: 16)).textSelection(.enabled)
                         }
+                        if message.shipmentId != nil { ShipCardFooter(message: message, canMark: canShipMark, onMark: onShipMark) }
                     }
                     HStack(spacing: 4) {
                         Spacer(minLength: 0)

@@ -52,15 +52,15 @@ struct MainTabs: View {
             LeadsView()
                 .tabItem { Label("Заявки", systemImage: "bubble.left") }
                 .badge(state.newLeads).tag(1)
+            ShipmentsView()
+                .tabItem { Label("Отправки", systemImage: "shippingbox") }
+                .tag(5)
             TasksView()
                 .tabItem { Label("Задачи", systemImage: "checkmark.square") }
                 .badge(state.myTasksOpen).tag(2)
             ChatsView()
                 .tabItem { Label("Чаты", systemImage: "bubble.left.and.bubble.right") }
                 .badge(state.unreadChats).tag(3)
-            MeView()
-                .tabItem { Label("Я", systemImage: "person.crop.circle") }
-                .tag(4)
         }
     }
 }
@@ -81,3 +81,25 @@ struct ComingSoonView: View {
         }
     }
 }
+
+/// Аватар слева сверху на каждой вкладке — открывает «Я» (профиль, смена, сотрудники, выход).
+struct MeButtonModifier: ViewModifier {
+    @EnvironmentObject var state: AppState
+    @State private var show = false
+    func body(content: Content) -> some View {
+        content
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { show = true } label: {
+                        ZStack(alignment: .bottomTrailing) {
+                            Avatar(userId: state.user?.id, name: state.user?.name ?? "", size: 30)
+                            if state.work?.open != nil { Circle().fill(Theme.green).frame(width: 9, height: 9).overlay(Circle().stroke(Theme.bg, lineWidth: 2)) }
+                        }
+                    }
+                    .accessibilityLabel("Мой профиль")
+                }
+            }
+            .sheet(isPresented: $show) { MeView().environmentObject(state).preferredColorScheme(state.colorScheme) }
+    }
+}
+extension View { func meButton() -> some View { modifier(MeButtonModifier()) } }

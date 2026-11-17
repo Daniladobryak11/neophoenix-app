@@ -53,6 +53,7 @@ struct TasksView: View {
             .scrollContentBackground(.hidden).background(Theme.bg)
             .refreshable { await state.refreshTasks() }
             .navigationTitle("Задачи")
+            .meButton()
             .navigationDestination(for: String.self) { id in TaskDetailView(taskId: id) }
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button { showNew = true } label: { Image(systemName: "plus") } } }
             .sheet(isPresented: $showNew) { NewTaskView() }
