@@ -4,6 +4,7 @@ struct OrdersView: View {
     @EnvironmentObject var state: AppState
     @State private var filter: Filter = .mine
     @State private var query = ""
+    @State private var showNew = false
     enum Filter: String, CaseIterable { case mine = "Мои", active = "Все активные", awaitingPay = "Ждут оплату", all = "Все" }
 
     private var list: [Order] {
@@ -49,6 +50,10 @@ struct OrdersView: View {
             .searchable(text: $query, prompt: "Номер, клиент, телефон, трек")
             .navigationTitle("Заказы")
             .navigationDestination(for: String.self) { id in OrderDetailView(orderId: id) }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) { Button { showNew = true } label: { Image(systemName: "plus") } }
+            }
+            .sheet(isPresented: $showNew) { NewOrderView() }
         }
     }
 

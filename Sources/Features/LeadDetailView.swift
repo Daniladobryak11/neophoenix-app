@@ -10,6 +10,7 @@ struct LeadDetailView: View {
     @State private var comment = ""
     @State private var busy = false
     @State private var error: String?
+    @State private var showOrder = false
 
     private var lead: Lead? { state.leads.first { $0.id == leadId } }
 
@@ -39,6 +40,15 @@ struct LeadDetailView: View {
                             if let p = l.product, !p.isEmpty { LabeledContent("Товар", value: p) }
                         }
                     }
+                    Section {
+                        if let oid = l.orderId, !oid.isEmpty, let o = state.orders.first(where: { $0.id == oid }) {
+                            Label("Заказ \(o.number) · \(o.status)", systemImage: "doc.text").foregroundStyle(Theme.green)
+                        } else {
+                            Button { showOrder = true } label: { Label("Создать заказ из заявки", systemImage: "cart.badge.plus") }
+                                .buttonStyle(GoldButtonStyle())
+                                .listRowBackground(Color.clear).listRowInsets(EdgeInsets())
+                        }
+                    }
                     Section("Статус") {
                         Picker("Статус", selection: $status) {
                             ForEach(leadStatuses) { Text($0.label).tag($0.id) }
@@ -63,6 +73,7 @@ struct LeadDetailView: View {
                 }
             }
             .onAppear { if let l = lead { status = l.status; comment = l.comment ?? "" } }
+            .sheet(isPresented: $showOrder, onDismiss: { if let l = lead { status = l.status } }) { NewOrderView(lead: lead) }
         }
     }
 

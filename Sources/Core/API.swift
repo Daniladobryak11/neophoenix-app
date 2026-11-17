@@ -86,5 +86,44 @@ final class API {
         catch { throw APIError(message: "Сервер ответил непонятно. Обновите приложение.", status: status) }
     }
 
+    /// Отправка файла (фото, документ) — multipart/form-data, как форма в браузере.
+    func upload<T: Decodable>(_ path: String, fields: [String: String], fileField: String, fileName: String, mime: String, data fileData: Data, as type: T.Type = T.self) async throws -> T {
+        guard let url = URL(string: server + path) else { throw APIError(message: "Неверный адрес сервера", status: 0) }
+        let boundary = "np-" + UUID().uuidString
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 90
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if let token { req.setValue(token, forHTTPHeaderField: "X-App-Token") }
+        var body = Data()
+        func add(_ s: String) { body.append(s.data(using: .utf8)!) }
+        for (k, v) in fields {
+            add("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(k)\"\r\n\r\n\(v)\r\n")
+        }
+        let safeName = fileName.replacingOccurrences(of: "\"", with: "")
+        add("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(fileField)\"; filename=\"\(safeName)\"\r\nContent-Type: \(mime)\r\n\r\n")
+        body.append(fileData)
+        add("\r\n--\(boundary)--\r\n")
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await session.upload(for: req, from: body) }
+        catch { throw APIError(message: "Не удалось отправить файл. Проверьте интернет.", status: 0) }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if let err = try? decoder.decode(ErrorBody.self, from: data), err.ok == false { throw APIError(message: err.error ?? "Ошибка сервера", status: status) }
+        guard (200..<300).contains(status) else { throw APIError(message: "Ошибка сервера (\(status))", status: status) }
+        return try decoder.decode(T.self, from: data)
+    }
+
+    /// Скачать файл, доступный только сотрудникам (вложения чата).
+    func download(_ path: String) async throws -> (Data, String?) {
+        guard let url = URL(string: server + path) else { throw APIError(message: "Неверный адрес", status: 0) }
+        var req = URLRequest(url: url)
+        if let token { req.setValue(token, forHTTPHeaderField: "X-App-Token") }
+        let (data, resp) = try await session.data(for: req)
+        let http = resp as? HTTPURLResponse
+        guard let http, (200..<300).contains(http.statusCode) else { throw APIError(message: "Файл недоступен", status: http?.statusCode ?? 0) }
+        return (data, http.value(forHTTPHeaderField: "Content-Type"))
+    }
+
     private struct ErrorBody: Decodable { let ok: Bool?; let error: String? }
 }

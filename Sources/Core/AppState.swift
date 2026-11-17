@@ -109,7 +109,7 @@ final class AppState: ObservableObject {
     }
 
     func refreshWork() async {
-        if let w: WorkStatus = try? await API.shared.get("/api/worktime.php?action=status") { work = w }
+        if let w = try? await API.shared.get("/api/worktime.php?action=status", as: WorkStatus.self) { work = w }
     }
 
     /// Начать или закончить смену. Возвращает текст ошибки, если сервер отказал.

@@ -99,6 +99,7 @@ struct Lead: Decodable, Hashable, Identifiable {
     let managerName: String?
     let comment: String?
     let source: String?
+    let orderId: String?
     let createdAt: String
 
     var statusLabel: String {

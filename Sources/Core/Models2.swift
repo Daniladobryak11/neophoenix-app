@@ -95,7 +95,8 @@ struct ChatMessage: Decodable, Hashable, Identifiable {
     let attachmentId: String?
     let attachmentName: String?
     let attachmentIsImage: Bool
-    enum K: String, CodingKey { case id, sender_id, sender_name, body, created_at, edited_at, deleted_at, reply_body, reply_sender_name, attachment_id, attachment_name, attachment_is_image }
+    let reactions: [Reaction]
+    enum K: String, CodingKey { case id, sender_id, sender_name, body, created_at, edited_at, deleted_at, reply_body, reply_sender_name, attachment_id, attachment_name, attachment_is_image, reactions }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: K.self)
         id = c.flexString(.id) ?? ""
@@ -110,9 +111,54 @@ struct ChatMessage: Decodable, Hashable, Identifiable {
         attachmentId = c.flexString(.attachment_id)
         attachmentName = c.flexString(.attachment_name)
         attachmentIsImage = c.flexInt(.attachment_is_image) == 1
+        reactions = (try? c.decodeIfPresent([Reaction].self, forKey: .reactions)) ?? []
     }
+    /// Подпись к файлу сервер пишет сам («📷 имя.jpg») — её не показываем отдельно.
+    var isAutoLabel: Bool { attachmentId != nil && (body.hasPrefix("📷 ") || body.hasPrefix("📎 ")) }
     var numericId: Int { Int(id) ?? 0 }
 }
+struct Reaction: Decodable, Hashable {
+    let emoji: String
+    let count: Int
+    let mine: Bool
+    enum K: String, CodingKey { case emoji, count, mine }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: K.self)
+        emoji = c.flexString(.emoji) ?? ""
+        count = c.flexInt(.count)
+        mine = c.flexInt(.mine) == 1
+    }
+}
+let chatReactions = ["👍", "❤️", "✅", "🔥"]
+
+struct Product: Decodable, Hashable, Identifiable {
+    let id: String
+    let name: String
+    let article: String?
+    let price: Double
+    let stock: Int
+    enum K: String, CodingKey { case id, name, article, price, stock }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: K.self)
+        id = c.flexString(.id) ?? ""
+        name = c.flexString(.name) ?? ""
+        article = c.flexString(.article)
+        if let p = try? c.decodeIfPresent(Double.self, forKey: .price) { price = p }
+        else { price = Double(c.flexString(.price) ?? "") ?? 0 }
+        stock = c.flexInt(.stock)
+    }
+}
+struct CatalogResponse: Decodable {
+    struct Payload: Decodable { let products: [Product] }
+    let ok: Bool
+    let data: Payload?
+}
+struct CreatedOrderResponse: Decodable {
+    let ok: Bool
+    let id: String?
+    let orders: [Order]?
+}
+
 struct Receipt: Decodable, Hashable {
     let name: String
     let read: Int
