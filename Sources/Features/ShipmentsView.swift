@@ -1,6 +1,11 @@
 import SwiftUI
 
 /// Отправки Авито: список с фильтрами, форма, карточка, настройки.
+func shipDate(_ s: String) -> String {
+    guard let d = parseISO(s) else { return s }
+    return d.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+}
+
 enum ShipStore {
     static func options() async -> ShipOptions? {
         try? await API.shared.get("/api/shipments.php?action=options", as: ShipOptions.self)
@@ -179,9 +184,9 @@ struct ShipmentDetailView: View {
                     }
                 }
                 Section("История") {
-                    row("Создал", s.createdByName + " · " + s.createdAt)
-                    if !s.packedByName.isEmpty { row("Упаковал", s.packedByName + " · " + s.packedAt) }
-                    if !s.sentByName.isEmpty { row("Отправил", s.sentByName + " · " + s.sentAt) }
+                    row("Создал", s.createdByName + " · " + shipDate(s.createdAt))
+                    if !s.packedByName.isEmpty { row("Упаковал", s.packedByName + " · " + shipDate(s.packedAt)) }
+                    if !s.sentByName.isEmpty { row("Отправил", s.sentByName + " · " + shipDate(s.sentAt)) }
                     if s.status == "cancelled" { row("Отменил", s.cancelledByName + (s.cancelReason.isEmpty ? "" : " · " + s.cancelReason)) }
                 }
                 if let c = s.can, c.pack || c.send || c.unpack || c.edit || c.cancel {
