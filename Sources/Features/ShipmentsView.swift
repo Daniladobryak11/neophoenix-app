@@ -265,65 +265,114 @@ struct ShipmentFormView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                if let opt, opt.myAccounts.isEmpty && editing == nil {
-                    Section {
-                        Text(opt.isBoss ? "Сначала добавьте аккаунт Авито: Отправки → ⚙︎ Настройки." : "За вами не закреплён ни один аккаунт Авито — обратитесь к администратору.")
-                            .foregroundStyle(Theme.red)
-                    }
-                }
-                Section("Аккаунт Авито") {
-                    Picker("Аккаунт", selection: $accountId) {
-                        ForEach(opt?.myAccounts ?? []) { a in Text(a.name).tag(a.id) }
-                    }
-                }
-                Section {
-                    ForEach(items.indices, id: \.self) { i in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                TextField("Артикул", text: Binding(get: { items[i].article }, set: { v in
-                                    items[i].article = v
-                                    items[i].name = products.first { ($0.article ?? "").caseInsensitiveCompare(v.trimmingCharacters(in: .whitespaces)) == .orderedSame }?.name ?? ""
-                                }))
-                                .textInputAutocapitalization(.characters).autocorrectionDisabled()
-                                Button { pickFor = i } label: { Image(systemName: "list.bullet.rectangle") }.buttonStyle(.borderless)
-                                    .accessibilityLabel("Из каталога")
-                            }
-                            if !items[i].name.isEmpty { Text(items[i].name).font(.system(size: 12)).foregroundStyle(Theme.muted) }
-                            Stepper(value: $items[i].qty, in: 1...10000) { Text("Количество: \(items[i].qty) шт") }
-                        }
-                    }
-                    .onDelete { idx in if items.count > 1 { items.remove(atOffsets: idx) } }
-                    Button { items.append(ShipItem(article: "", name: "", qty: 1)) } label: { Label("Ещё товар", systemImage: "plus.circle") }
-                } header: { Text("Товары") } footer: { Text("Впишите артикул вручную или выберите из каталога. Цена не указывается.") }
-                Section("Транспортная компания") {
-                    Picker("Компания", selection: $carrierId) {
-                        ForEach((opt?.carriers ?? []).filter { $0.active || $0.id == carrierId }) { c in Text(c.name).tag(c.id) }
-                    }
-                }
-                Section("Трек-номер") {
-                    TextField("Обязательно", text: $track).textInputAutocapitalization(.characters).autocorrectionDisabled()
-                }
-                Section("Комментарий") {
-                    TextField("Необязательно", text: $comment, axis: .vertical).lineLimit(2...6)
-                }
-                if let error { Section { Text(error).foregroundStyle(Theme.red) } }
+            formContent
+                .scrollContentBackground(.hidden).background(Theme.bg)
+                .navigationTitle(titleText)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbarContent }
+                .sheet(item: pickBinding) { b in pickerSheet(b) }
+                .task { await setup() }
+        }
+    }
+
+    private var titleText: String { editing.map { "Отправка №\($0.id)" } ?? "Новая отправка" }
+
+    private var pickBinding: Binding<IdBox?> {
+        Binding(get: { pickFor.map { IdBox(id: String($0)) } }, set: { pickFor = $0.flatMap { Int($0.id) } })
+    }
+
+    private func pickerSheet(_ b: IdBox) -> some View {
+        ShipCatalogPicker(products: products) { p in
+            if let i = Int(b.id), i < items.count { items[i].article = p.article ?? ""; items[i].name = p.name }
+        }
+    }
+
+    @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
+        ToolbarItem(placement: .confirmationAction) {
+            Button(editing == nil ? "Создать" : "Сохранить") { Task { await save() } }.disabled(busy).fontWeight(.semibold)
+        }
+    }
+
+    private var formContent: some View {
+        Form {
+            warningSection
+            accountSection
+            itemsSection
+            carrierSection
+            Section("Трек-номер") {
+                TextField("Обязательно", text: $track).textInputAutocapitalization(.characters).autocorrectionDisabled()
             }
-            .scrollContentBackground(.hidden).background(Theme.bg)
-            .navigationTitle(editing == nil ? "Новая отправка" : "Отправка №\(editing!.id)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(editing == nil ? "Создать" : "Сохранить") { Task { await save() } }.disabled(busy).fontWeight(.semibold)
-                }
+            Section("Комментарий") {
+                TextField("Необязательно", text: $comment, axis: .vertical).lineLimit(2...6)
             }
-            .sheet(item: Binding(get: { pickFor.map { IdBox(id: String($0)) } }, set: { pickFor = $0.flatMap { Int($0.id) } })) { b in
-                ShipCatalogPicker(products: products) { p in
-                    if let i = Int(b.id), i < items.count { items[i].article = p.article ?? ""; items[i].name = p.name }
-                }
+            if let error { Section { Text(error).foregroundStyle(Theme.red) } }
+        }
+    }
+
+    @ViewBuilder private var warningSection: some View {
+        if let o = opt, o.myAccounts.isEmpty, editing == nil {
+            Section {
+                Text(o.isBoss ? "Сначала добавьте аккаунт Авито: Отправки → ⚙︎ Настройки." : "За вами не закреплён ни один аккаунт Авито — обратитесь к администратору.")
+                    .foregroundStyle(Theme.red)
             }
-            .task { await setup() }
+        }
+    }
+
+    private var accountSection: some View {
+        let list: [ShipAccount] = opt?.myAccounts ?? []
+        return Section("Аккаунт Авито") {
+            Picker("Аккаунт", selection: $accountId) {
+                ForEach(list) { a in Text(a.name).tag(a.id) }
+            }
+        }
+    }
+
+    private var carrierSection: some View {
+        let all: [ShipCarrier] = opt?.carriers ?? []
+        let list: [ShipCarrier] = all.filter { $0.active || $0.id == carrierId }
+        return Section("Транспортная компания") {
+            Picker("Компания", selection: $carrierId) {
+                ForEach(list) { c in Text(c.name).tag(c.id) }
+            }
+        }
+    }
+
+    private var itemsSection: some View {
+        Section {
+            ForEach(items.indices, id: \.self) { i in itemRow(i) }
+                .onDelete { idx in if items.count > 1 { items.remove(atOffsets: idx) } }
+            Button { items.append(ShipItem(article: "", name: "", qty: 1)) } label: { Label("Ещё товар", systemImage: "plus.circle") }
+        } header: { Text("Товары") } footer: { Text("Впишите артикул вручную или выберите из каталога. Цена не указывается.") }
+    }
+
+    private func articleBinding(_ i: Int) -> Binding<String> {
+        Binding(get: { i < items.count ? items[i].article : "" }, set: { v in
+            guard i < items.count else { return }
+            items[i].article = v
+            items[i].name = productName(for: v)
+        })
+    }
+
+    private func productName(for article: String) -> String {
+        let a = article.trimmingCharacters(in: .whitespaces)
+        for p in products where (p.article ?? "").caseInsensitiveCompare(a) == .orderedSame { return p.name }
+        return ""
+    }
+
+    private func itemRow(_ i: Int) -> some View {
+        let name: String = i < items.count ? items[i].name : ""
+        let qty: Int = i < items.count ? items[i].qty : 1
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                TextField("Артикул", text: articleBinding(i))
+                    .textInputAutocapitalization(.characters).autocorrectionDisabled()
+                Button { pickFor = i } label: { Image(systemName: "list.bullet.rectangle") }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Из каталога")
+            }
+            if !name.isEmpty { Text(name).font(.system(size: 12)).foregroundStyle(Theme.muted) }
+            Stepper(value: $items[i].qty, in: 1...10000) { Text("Количество: \(qty) шт") }
         }
     }
 
