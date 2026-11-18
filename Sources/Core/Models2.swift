@@ -106,8 +106,17 @@ struct ChatMessage: Decodable, Hashable, Identifiable {
     let shipSentBy: String?
     let shipSentAt: String?
     let shipCancelReason: String?
+    let shipKind: String?
+    let shipReceivedBy: String?
+    let shipReceivedAt: String?
+    let shipCheckedBy: String?
+    let shipCheckedAt: String?
+    let shipCheckResult: String?
+    let shipCheckComment: String?
+    let shipPhotos: [String]
     enum K: String, CodingKey { case id, sender_id, sender_name, body, created_at, edited_at, deleted_at, reply_body, reply_sender_name, attachment_id, attachment_name, attachment_is_image, reactions,
-                                shipment_id, ship_status, ship_packed_by, ship_packed_at, ship_sent_by, ship_sent_at, ship_cancel_reason }
+                                shipment_id, ship_status, ship_packed_by, ship_packed_at, ship_sent_by, ship_sent_at, ship_cancel_reason,
+                                ship_kind, ship_received_by, ship_received_at, ship_checked_by, ship_checked_at, ship_check_result, ship_check_comment, ship_photos }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: K.self)
         id = c.flexString(.id) ?? ""
@@ -127,6 +136,11 @@ struct ChatMessage: Decodable, Hashable, Identifiable {
         shipPackedBy = c.flexString(.ship_packed_by); shipPackedAt = c.flexString(.ship_packed_at)
         shipSentBy = c.flexString(.ship_sent_by); shipSentAt = c.flexString(.ship_sent_at)
         shipCancelReason = c.flexString(.ship_cancel_reason)
+        shipKind = c.flexString(.ship_kind)
+        shipReceivedBy = c.flexString(.ship_received_by); shipReceivedAt = c.flexString(.ship_received_at)
+        shipCheckedBy = c.flexString(.ship_checked_by); shipCheckedAt = c.flexString(.ship_checked_at)
+        shipCheckResult = c.flexString(.ship_check_result); shipCheckComment = c.flexString(.ship_check_comment)
+        shipPhotos = (c.flexString(.ship_photos) ?? "").split(separator: ",").map(String.init)
     }
     /// Подпись к файлу сервер пишет сам («📷 имя.jpg») — её не показываем отдельно.
     var isAutoLabel: Bool { attachmentId != nil && (body.hasPrefix("📷 ") || body.hasPrefix("📎 ") || body.hasPrefix("🎤 ")) }
@@ -351,7 +365,7 @@ func taskStatusColor(_ s: String) -> Color {
     switch s { case "new": return Theme.blue; case "work": return Theme.amber; case "review": return Theme.violet; case "done": return Theme.green; default: return Theme.muted }
 }
 
-// MARK: - Отправки Авито
+// MARK: - Отправки Авито (6.25) и возвраты (6.26)
 
 struct ShipItem: Codable, Hashable {
     var article: String
@@ -367,34 +381,55 @@ struct ShipItem: Codable, Hashable {
 }
 struct ShipCan: Decodable, Hashable {
     let edit: Bool, cancel: Bool, pack: Bool, send: Bool, unpack: Bool
-    enum K: String, CodingKey { case edit, cancel, pack, send, unpack }
+    let receive: Bool, unreceive: Bool, check: Bool, makeReturn: Bool, photo: Bool
+    enum K: String, CodingKey { case edit, cancel, pack, send, unpack, receive, unreceive, check, photo; case makeReturn = "return" }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: K.self)
         edit = c.flexInt(.edit) == 1; cancel = c.flexInt(.cancel) == 1; pack = c.flexInt(.pack) == 1; send = c.flexInt(.send) == 1; unpack = c.flexInt(.unpack) == 1
+        receive = c.flexInt(.receive) == 1; unreceive = c.flexInt(.unreceive) == 1; check = c.flexInt(.check) == 1
+        makeReturn = c.flexInt(.makeReturn) == 1; photo = c.flexInt(.photo) == 1
     }
 }
+struct ShipPhoto: Decodable, Hashable, Identifiable {
+    let id: String, by: String
+    enum K: String, CodingKey { case id, by }
+    init(from d: Decoder) throws { let c = try d.container(keyedBy: K.self); id = c.flexString(.id) ?? ""; by = c.flexString(.by) ?? "" }
+    var path: String { "/api/shipments.php?action=photo&id=\(id)" }
+}
 struct Shipment: Decodable, Hashable, Identifiable {
-    let id: String, status: String, statusLabel: String
+    let id: String, kind: String, status: String, statusLabel: String
     let accountId: String, account: String, carrierId: String, carrier: String
     let track: String, comment: String, items: [ShipItem]
+    let cost: String, pvz: String, pvzAddress: String, sourceId: String, returnId: String
     let createdBy: String, createdByName: String, createdAt: String
     let packedByName: String, packedAt: String, sentByName: String, sentAt: String
+    let receivedByName: String, receivedAt: String, checkedByName: String, checkedAt: String
+    let checkResult: String, checkComment: String
     let cancelledByName: String, cancelReason: String
+    let photos: [ShipPhoto]
     let can: ShipCan?
-    enum K: String, CodingKey { case id, status, statusLabel, accountId, account, carrierId, carrier, track, comment, items, createdBy, createdByName, createdAt, packedByName, packedAt, sentByName, sentAt, cancelledByName, cancelReason, can }
+    var isReturn: Bool { kind == "return" }
+    enum K: String, CodingKey { case id, kind, status, statusLabel, accountId, account, carrierId, carrier, track, comment, items, cost, pvz, pvzAddress, sourceId, returnId,
+        createdBy, createdByName, createdAt, packedByName, packedAt, sentByName, sentAt, receivedByName, receivedAt, checkedByName, checkedAt, checkResult, checkComment,
+        cancelledByName, cancelReason, photos, can }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: K.self)
         func s(_ k: K) -> String { c.flexString(k) ?? "" }
-        id = s(.id); status = s(.status); statusLabel = s(.statusLabel); accountId = s(.accountId); account = s(.account)
-        carrierId = s(.carrierId); carrier = s(.carrier); track = s(.track); comment = s(.comment)
+        id = s(.id); kind = c.flexString(.kind) ?? "ship"; status = s(.status); statusLabel = s(.statusLabel)
+        accountId = s(.accountId); account = s(.account); carrierId = s(.carrierId); carrier = s(.carrier); track = s(.track); comment = s(.comment)
         items = (try? c.decodeIfPresent([ShipItem].self, forKey: .items)) ?? []
+        cost = (try? c.decodeIfPresent(String.self, forKey: .cost)) ?? ""
+        pvz = s(.pvz); pvzAddress = s(.pvzAddress); sourceId = s(.sourceId); returnId = s(.returnId)
         createdBy = s(.createdBy); createdByName = s(.createdByName); createdAt = s(.createdAt)
         packedByName = s(.packedByName); packedAt = s(.packedAt); sentByName = s(.sentByName); sentAt = s(.sentAt)
+        receivedByName = s(.receivedByName); receivedAt = s(.receivedAt); checkedByName = s(.checkedByName); checkedAt = s(.checkedAt)
+        checkResult = s(.checkResult); checkComment = s(.checkComment)
         cancelledByName = s(.cancelledByName); cancelReason = s(.cancelReason)
+        photos = (try? c.decodeIfPresent([ShipPhoto].self, forKey: .photos)) ?? []
         can = try? c.decodeIfPresent(ShipCan.self, forKey: .can)
     }
 }
-struct ShipmentsResponse: Decodable { let ok: Bool; let shipments: [Shipment]; let counts: [String: Int]? }
+struct ShipmentsResponse: Decodable { let ok: Bool; let shipments: [Shipment]; let counts: [String: Int]?; let returnsOpen: Int? }
 struct ShipmentResponse: Decodable { let ok: Bool; let shipment: Shipment }
 struct ShipAccount: Decodable, Hashable, Identifiable {
     let id: String, name: String, active: Bool, users: [String]
@@ -425,10 +460,36 @@ struct ShipOptions: Decodable {
     let isWarehouse: Bool
     let roomId: String
 }
+struct ShipStatRow: Decodable, Hashable, Identifiable {
+    let id: String, name: String
+    let ships: Int, sent: Int, qty: Int, returns: Int, returnQty: Int, defects: Int, costCount: Int
+    let cost: Double
+    enum K: String, CodingKey { case id, name, ships, sent, qty, returns, returnQty, defects, cost, costCount }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: K.self)
+        id = c.flexString(.id) ?? UUID().uuidString; name = c.flexString(.name) ?? "Итого"
+        ships = c.flexInt(.ships); sent = c.flexInt(.sent); qty = c.flexInt(.qty); returns = c.flexInt(.returns)
+        returnQty = c.flexInt(.returnQty); defects = c.flexInt(.defects); costCount = c.flexInt(.costCount)
+        cost = (try? c.decodeIfPresent(Double.self, forKey: .cost)) ?? Double(c.flexString(.cost) ?? "") ?? 0
+    }
+}
+struct ShipStats: Decodable { let ok: Bool; let period: String; let shift: Int; let label: String; let accounts: [ShipStatRow]; let total: ShipStatRow }
 
 func shipStatusColor(_ s: String) -> Color {
-    switch s { case "new": return Theme.amber; case "packed": return Theme.blue; case "sent": return Theme.green; default: return Theme.red }
+    switch s { case "new", "await": return Theme.amber; case "packed", "received": return Theme.blue; case "sent", "checked": return Theme.green; default: return Theme.red }
 }
-func shipStatusText(_ s: String) -> String {
-    switch s { case "new": return "🕐 Ждёт упаковки"; case "packed": return "✅ Упакован"; case "sent": return "🚚 Отправлено"; default: return "✖️ Отменена" }
+func shipStatusText(_ s: String, isReturn: Bool = false) -> String {
+    switch s {
+    case "new": return "🕐 Ждёт упаковки"
+    case "packed": return "✅ Упакован"
+    case "sent": return "🚚 Отправлено"
+    case "await": return "🕐 Ждём возврат"
+    case "received": return "📥 Получен"
+    case "checked": return "✔️ Проверен"
+    default: return isReturn ? "✖️ Отменён" : "✖️ Отменена"
+    }
+}
+func shipRub(_ v: Double) -> String {
+    let f = NumberFormatter(); f.numberStyle = .decimal; f.locale = Locale(identifier: "ru_RU"); f.maximumFractionDigits = 2
+    return (f.string(from: NSNumber(value: v)) ?? String(v)) + " ₽"
 }

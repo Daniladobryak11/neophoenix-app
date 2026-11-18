@@ -15,6 +15,7 @@ struct ChatRoomView: View {
     @State private var sending = false
     @State private var error: String?
     @State private var showNewShip = false
+    @State private var showNewRet = false
     @State private var shipOpen: String?
     @State private var shipWarehouse = false
     @State private var loaded = false
@@ -64,7 +65,11 @@ struct ChatRoomView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if room?.systemKey == "ship" {
-                    Button { showNewShip = true } label: { Image(systemName: "shippingbox.fill") }.accessibilityLabel("Новая отправка")
+                    Menu {
+                        Button { showNewShip = true } label: { Label("Новая отправка", systemImage: "shippingbox") }
+                        Button { showNewRet = true } label: { Label("Новый возврат", systemImage: "arrow.uturn.backward") }
+                    } label: { Image(systemName: "shippingbox.fill") }
+                    .accessibilityLabel("Отправка или возврат")
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -95,8 +100,13 @@ struct ChatRoomView: View {
         }
         .sheet(isPresented: $showInfo) { ChatInfoView(roomId: roomId) }
         .sheet(isPresented: $showNewShip, onDismiss: { Task { await load(initial: false) } }) { ShipmentFormView(editing: nil) }
+        .sheet(isPresented: $showNewRet, onDismiss: { Task { await load(initial: false) } }) { ShipmentFormView(editing: nil, kind: "return") }
         .sheet(item: Binding(get: { shipOpen.map { IdBox(id: $0) } }, set: { shipOpen = $0?.id })) { b in
-            NavigationStack { ShipmentDetailView(shipId: b.id) }
+            NavigationStack {
+                ShipmentDetailView(shipId: b.id, onChange: { Task { await load(initial: false) } })
+                    .navigationDestination(for: String.self) { id in ShipmentDetailView(shipId: id) }
+            }
+            .environmentObject(state)
         }
         .task(id: room?.systemKey) { if room?.systemKey == "ship" { shipWarehouse = (await ShipStore.options())?.isWarehouse ?? false } }
         .sheet(item: $forwarding) { m in ForwardPicker(message: m, currentRoom: roomId) }
@@ -313,6 +323,7 @@ struct ChatRoomView: View {
 
     private func shipMark(_ m: ChatMessage, _ to: String) async {
         guard let sid = m.shipmentId else { return }
+        if to == "open" || to == "checked" { shipOpen = sid; return } // «Проверен» — через карточку: целый / брак
         do {
             _ = try await API.shared.post("/api/shipments.php?action=mark", ["id": Int(sid) ?? 0, "to": to], as: OkResponse.self)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
